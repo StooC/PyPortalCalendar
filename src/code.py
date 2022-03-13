@@ -1,6 +1,6 @@
-# SPDX-FileCopyrightText: 2021 Brent Rubell, written for Adafruit Industries
-#
-# SPDX-License-Identifier: Unlicense
+# Original version by Brent Rubell, from Adafruit Industries (MIT License) with many modifications by StooC
+# Purpose: Takes events on Google calendar for the day and displays a basic schedule
+
 import time
 import board
 import busio
@@ -15,14 +15,20 @@ from adafruit_display_text import label
 from adafruit_pyportal import PyPortal
 import rtc
 
-# Calendar ID
-CALENDAR_ID = "YOUR_CAL_ID"
+# Number of days to look ahead, normally 1 but can be increased for testing
+LOOK_AHEAD_DAYS = 1
 
 # Maximum amount of events to display
 MAX_EVENTS = 5
 
 # Amount of time to wait between refreshing the calendar, in minutes
 REFRESH_TIME = 15
+
+# Colours used for display
+HEADER_TEXT_COLOR = 0x00DD00
+TEXT_COLOR = 0x00DD00
+BACKGROUND_COLOR = 0x000000
+LINE_COLOR = 0x00DD00
 
 MONTHS = {
     1: "Jan",
@@ -57,8 +63,11 @@ WEEKDAYS = {
 try:
     from secrets import secrets
 except ImportError:
-    print("WiFi secrets are kept in secrets.py, please add them there!")
+    print("WiFi and other secrets are kept in secrets.py, please add them there!")
     raise
+
+# Calendar ID
+CALENDAR_ID = secrets['calendar_id']
 
 # If you are using a board with pre-defined ESP32 Pins:
 esp32_cs = DigitalInOut(board.ESP_CS)
@@ -104,17 +113,21 @@ def get_current_time(time_max=False):
     # Format as RFC339 timestamp
     cur_time = r.datetime
     if time_max:  # maximum time to fetch events is midnight (4:59:59UTC)
-        cur_time_max = time.struct_time(
+
+        # struct_time can only accept one argument not 9 so create tuple to pass in time
+        tupleTime = (
             cur_time[0],
             cur_time[1],
-            cur_time[2] + 1,
-            4,
-            59,
-            59,
+            cur_time[2] + LOOK_AHEAD_DAYS,
+            0,
+            0,
+            0,
             cur_time[6],
             cur_time[7],
             cur_time[8],
         )
+        cur_time_max = time.struct_time(tupleTime)
+
         cur_time = cur_time_max
     cur_time = "{:04d}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}{:s}".format(
         cur_time[0],
@@ -148,6 +161,8 @@ def get_calendar_events(calendar_id, max_events, time_min):
     resp = requests.get(url, headers=headers)
     resp_json = resp.json()
     if "error" in resp_json:
+        print(url)
+        print(headers)
         raise RuntimeError("Error:", resp_json)
     resp.close()
     # parse the 'items' array so we can iterate over it easier
@@ -192,10 +207,21 @@ def format_datetime(datetime, pretty_date=False):
 
 
 def display_calendar_events(resp_events):
+    if not resp_events:
+        label_no_events = label.Label(
+            font_events,
+            x=7,
+            y=70,
+            color=TEXT_COLOR,
+            text='No events today',
+        )
+        pyportal.splash.append(label_no_events)
+
     # Display all calendar events
     for event_idx in range(len(resp_events)):
         event = resp_events[event_idx]
         # wrap event name around second line if necessary
+        # API details at: https://developers.google.com/calendar/api/v3/reference/events
         event_name = PyPortal.wrap_nicely(event["summary"], 25)
         event_name = "\n".join(event_name[0:2])  # only wrap 2 lines, truncate third..
         event_start = event["start"]["dateTime"]
@@ -208,7 +234,7 @@ def display_calendar_events(resp_events):
             font_events,
             x=7,
             y=70 + (event_idx * 40),
-            color=0x000000,
+            color=TEXT_COLOR,
             text=format_datetime(event_start),
         )
         pyportal.splash.append(label_event_time)
@@ -217,21 +243,21 @@ def display_calendar_events(resp_events):
             font_events,
             x=88,
             y=70 + (event_idx * 40),
-            color=0x000000,
+            color=TEXT_COLOR,
             text=event_name,
             line_spacing=0.75,
         )
         pyportal.splash.append(label_event_desc)
 
 
-pyportal.set_background(0xFFFFFF)
+pyportal.set_background(BACKGROUND_COLOR)
 
 # Add the header
-line_header = Line(0, 50, 320, 50, color=0x000000)
+line_header = Line(0, 50, 320, 50, color=LINE_COLOR)
 pyportal.splash.append(line_header)
 
 font_h1 = bitmap_font.load_font("fonts/Arial-18.pcf")
-label_header = label.Label(font_h1, x=10, y=30, color=0x000000)
+label_header = label.Label(font_h1, x=10, y=30, color=HEADER_TEXT_COLOR)
 pyportal.splash.append(label_header)
 
 # Set up calendar event fonts

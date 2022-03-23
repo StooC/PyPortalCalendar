@@ -24,6 +24,9 @@ MAX_EVENTS = 5
 # Amount of time to wait between refreshing the calendar, in minutes
 REFRESH_TIME = 15
 
+# Should times be 24 hour aka Military time or not
+USE_24HR_TIME = True
+
 # Colours used for display
 HEADER_TEXT_COLOR = 0x00DD00
 TEXT_COLOR = 0x00DD00
@@ -190,13 +193,18 @@ def format_datetime(datetime, pretty_date=False):
     if "Z" in the_time:
         the_time = the_time.split("Z")[0]
     hours, minutes, _ = [int(x) for x in the_time.split(":")]
-    am_pm = "am"
-    if hours >= 12:
-        am_pm = "pm"
-        # convert to 12hr time
-        hours -= 12
-    # via https://github.com/micropython/micropython/issues/3087
-    formatted_time = "{:01d}:{:02d}{:s}".format(hours, minutes, am_pm)
+
+    if USE_24HR_TIME:
+        formatted_time = "{:02d}:{:02d}".format(hours, minutes)
+    else:
+        am_pm = "am"
+        if hours > 12:
+            am_pm = "pm"
+            # convert to 12hr time
+            hours -= 12
+        # via https://github.com/micropython/micropython/issues/3087
+        formatted_time = "{:01d}:{:02d}{:s}".format(hours, minutes, am_pm)
+
     if pretty_date:  # return a nice date for header label
         formatted_date = "{} {}.{:02d}, {:04d} ".format(
             WEEKDAYS[r.datetime[6]], MONTHS[month], mday, year
@@ -219,10 +227,15 @@ def display_calendar_events(resp_events):
 
     # Display all calendar events
     for event_idx in range(len(resp_events)):
+        # We can have a little more space for the event name if not displaying am/pm
+        desc_x = 76 if USE_24HR_TIME else 88
+        wrap_at = 28 if USE_24HR_TIME else 25
+
         event = resp_events[event_idx]
         # wrap event name around second line if necessary
         # API details at: https://developers.google.com/calendar/api/v3/reference/events
-        event_name = PyPortal.wrap_nicely(event["summary"], 25)
+        # Adafruit wrapping API: https://learn.adafruit.com/making-a-pyportal-user-interface-displayio/text-box
+        event_name = PyPortal.wrap_nicely(event["summary"], wrap_at)
         event_name = "\n".join(event_name[0:2])  # only wrap 2 lines, truncate third..
         event_start = event["start"]["dateTime"]
         print("-" * 40)
@@ -241,7 +254,7 @@ def display_calendar_events(resp_events):
 
         label_event_desc = label.Label(
             font_events,
-            x=88,
+            x=desc_x,
             y=70 + (event_idx * 40),
             color=TEXT_COLOR,
             text=event_name,

@@ -192,6 +192,9 @@ def format_datetime(datetime, pretty_date=False):
     the_time = the_time.split("-")[0]
     if "Z" in the_time:
         the_time = the_time.split("Z")[0]
+    elif "+" in the_time:
+        the_time = the_time.split("+")[0]
+
     hours, minutes, _ = [int(x) for x in the_time.split(":")]
 
     if USE_24HR_TIME:
